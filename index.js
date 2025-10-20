@@ -20,6 +20,29 @@ const drivers = [
 console.log("Drivers Array:");
 console.log(drivers);
 
+//TASK2
+// 1. Read and display all drivers' names using forEach
+console.log("\nAll drivers names:");
+drivers.forEach((driver) => {
+    console.log(driver.name);
+});
+
+// 2. Add a new driver directly in the array using push
+drivers.push({
+    name: "Bob Johnson",
+    vehicleType: "Van",
+    isAvailable: true,
+    rating: 4.9
+});
+
+console.log("\nUpdated Drivers Array after adding new driver:");
+console.log(drivers);
+
+console.log("\nAll drivers names after update:");
+drivers.forEach((driver) => {
+    console.log(driver.name);
+});
+
 // Optional print the array
 console.log("\nFormatted Drivers Data:");
 console.log(JSON.stringify(drivers, null, 2));
