@@ -128,14 +128,43 @@ async function main() {
 
         console.log(`John Doe's rating updated: {johnBefore.rating} → {johnAfter.rating}`);
 
-        // Show final state of all drivers
-        console.log("\nFinal drivers state after Task 5:");
-        const finalDrivers = await driversCollection.find({}).toArray();
-        finalDrivers.forEach(driver => {
-            console.log(`   - {driver.name}: Rating {driver.rating}, Available: {driver.isAvailable}`);
+        //TASK 6 Delete Unavailable Drivers
+        console.log("\nTASK 6 Delete Unavailable Drivers");
+        
+        // Show current state before delete
+        console.log("Current drivers before delete:");
+        const driversBeforeDelete = await driversCollection.find({}).toArray();
+        driversBeforeDelete.forEach(driver => {
+            console.log(` - ${driver.name}: Rating ${driver.rating}, Available: ${driver.isAvailable}`);
         });
 
-        console.log("\nALL TASKS COMPLETED SUCCESSFULLY!");
+        // Count unavailable drivers before delete
+        const unavailableCountBefore = await driversCollection.countDocuments({ 
+            isAvailable: false 
+        });
+        console.log(`\nUnavailable drivers to delete: ${unavailableCountBefore}`);
+
+        // Delete unavailable drivers
+        const deleteResult = await driversCollection.deleteMany(
+            { isAvailable: false }
+        );
+        
+        console.log(`Delete result: ${deleteResult.deletedCount} driver(s) deleted`);
+
+        // Show final state after delete
+        console.log("\nFinal drivers after delete:");
+        const driversAfterDelete = await driversCollection.find({}).toArray();
+        if (driversAfterDelete.length > 0) {
+            driversAfterDelete.forEach(driver => {
+                console.log(`- ${driver.name}: Rating ${driver.rating}, Available: ${driver.isAvailable}`);
+            });
+        } else {
+            console.log(" No drivers remaining in database");
+        }
+
+        // Show summary
+        console.log(`\nDeleted ${deleteResult.deletedCount} unavailable driver(s)`);
+        console.log(`Remaining drivers: ${driversAfterDelete.length}`);
 
     } catch (err) {
         console.error("Error:", err);
