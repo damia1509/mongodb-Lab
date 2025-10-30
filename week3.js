@@ -44,8 +44,8 @@ app.post('/rides', async (req, res) => {
     }
 });
 
-// 3. PATCH /rides/:id - Update Ride Status
-app.patch('/rides/:id', async (req, res) => {
+// 3. PATCH but in task ask (put) /rides/:id - Update Ride Status
+app.put('/rides/:id', async (req, res) => {
     try {
         const result = await db.collection('rides').updateOne(
             { _id: new ObjectId(req.params.id) },
