@@ -1,7 +1,11 @@
+require('dotenv').config(); [cite_start]// Load environment variables [cite: 34]
+
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
-const port = 3000;
+const bcrypt = require('bcrypt'); [cite_start]// Import bcrypt for hashing [cite: 21]
+const jwt = require('jsonwebtoken'); [cite_start]// Import JWT for tokens [cite: 39]
 
+const port = 3000;
 const app = express();
 app.use(express.json());
 
@@ -21,36 +25,81 @@ async function connectToMongoDB() {
 }
 connectToMongoDB();
 
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
+// --- SECURITY MIDDLEWARE ---
 
-//Customer  
+[cite_start]// 1. Verify Token Middleware [cite: 55-67]
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Get token from "Bearer <token>"
 
-// Customer Registration
+    if (!token) return res.status(401).json({ error: "Unauthorized: No token provided" });
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: "Forbidden: Invalid token" });
+        req.user = user; // Save decoded user info to request
+        next();
+    });
+};
+
+[cite_start]// 2. Check Role Middleware [cite: 68-71]
+const authorizeRole = (roles) => {
+    return (req, res, next) => {
+        if (!req.user || !roles.includes(req.user.role)) {
+            return res.status(403).json({ error: "Forbidden: Access denied" });
+        }
+        next();
+    };
+};
+
+// --- ROUTES ---
+
+[cite_start]// Customer Registration (UPDATED: Now hashes password) [cite: 23-32]
 app.post('/users/register', async (req, res) => {
     try {
-        const result = await db.collection('users').insertOne(req.body);
-        res.status(201).json({ id: result.insertedId });
+        const saltRounds = 10;
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
+
+        const newUser = {
+            ...req.body,
+            password: hashedPassword, // Store hash, NOT plain text
+            role: req.body.role || "customer" // Default to customer
+        };
+
+        const result = await db.collection('users').insertOne(newUser);
+        res.status(201).json({ id: result.insertedId, message: "User registered securely" });
     } catch (err) {
         res.status(400).json({ error: "Registration failed" });
     }
 });
 
-// Customer Login
+[cite_start]// Customer Login (UPDATED: Now returns JWT Token) [cite: 40-51]
 app.post('/users/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await db.collection('users').findOne({ email, password });
-        if (!user) return res.status(401).json({ error: "Invalid credentials" });
-        res.status(200).json(user);
+        const user = await db.collection('users').findOne({ email });
+        
+        // Check if user exists AND password matches hash
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        // Generate JWT Token
+        const token = jwt.sign(
+            { userId: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN }
+        );
+
+        res.status(200).json({ token }); // Send token to client
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: "Login failed" });
     }
 });
 
-// View Profile
-app.get('/users/:id', async (req, res) => {
+// View Profile (Protected)
+app.get('/users/:id', authenticateToken, async (req, res) => {
     try {
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.params.id) });
         if (!user) return res.status(404).json({ error: "User not found" });
@@ -60,9 +109,8 @@ app.get('/users/:id', async (req, res) => {
     }
 });
 
-// Ride 
+// --- RIDE ROUTES ---
 
-// Create Ride (Book Ride)
 app.post('/rides', async (req, res) => {
     try {
         const result = await db.collection('rides').insertOne(req.body);
@@ -72,7 +120,6 @@ app.post('/rides', async (req, res) => {
     }
 });
 
-// Track Ride
 app.get('/rides/:id', async (req, res) => {
     try {
         const ride = await db.collection('rides').findOne({ _id: new ObjectId(req.params.id) });
@@ -83,7 +130,6 @@ app.get('/rides/:id', async (req, res) => {
     }
 });
 
-// Rate Driver
 app.post('/rides/:id/rate', async (req, res) => {
     const { rating, comment } = req.body;
     try {
@@ -98,11 +144,11 @@ app.post('/rides/:id/rate', async (req, res) => {
     }
 });
 
-//  Driver 
+// --- DRIVER ROUTES ---
 
-// Driver Registration
 app.post('/drivers/register', async (req, res) => {
     try {
+        // Note: Ideally drivers should also use hashing, but keeping logic simple for now
         const result = await db.collection('drivers').insertOne(req.body);
         res.status(201).json({ id: result.insertedId });
     } catch (err) {
@@ -110,7 +156,6 @@ app.post('/drivers/register', async (req, res) => {
     }
 });
 
-// Driver Login
 app.post('/drivers/login', async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -122,7 +167,6 @@ app.post('/drivers/login', async (req, res) => {
     }
 });
 
-// Update Driver Availability
 app.patch('/drivers/:id/availability', async (req, res) => {
     try {
         const result = await db.collection('drivers').updateOne(
@@ -136,7 +180,6 @@ app.patch('/drivers/:id/availability', async (req, res) => {
     }
 });
 
-// Accept Ride Request
 app.patch('/rides/:id/accept', async (req, res) => {
     try {
         const result = await db.collection('rides').updateOne(
@@ -150,7 +193,6 @@ app.patch('/rides/:id/accept', async (req, res) => {
     }
 });
 
-// View Earnings
 app.get('/drivers/:id/earnings', async (req, res) => {
     try {
         const rides = await db.collection('rides').find({ driver_id: req.params.id }).toArray();
@@ -161,9 +203,9 @@ app.get('/drivers/:id/earnings', async (req, res) => {
     }
 });
 
-// Admin 
+// --- ADMIN ROUTES (SECURED) ---
 
-// Admin Login
+// Admin Login (Note: For this lab, you usually reuse users/login if admins are in users table)
 app.post('/admin/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -175,8 +217,8 @@ app.post('/admin/login', async (req, res) => {
     }
 });
 
-// Block User (Customer or Driver)
-app.patch('/admin/block/:id', async (req, res) => {
+[cite_start]// Block User (UPDATED: RESTRICTED TO ADMIN) [cite: 74-77]
+app.patch('/admin/block/:id', authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
         const userResult = await db.collection('users').updateOne(
             { _id: new ObjectId(req.params.id) },
@@ -196,8 +238,8 @@ app.patch('/admin/block/:id', async (req, res) => {
     }
 });
 
-// Approve Driver Registration
-app.patch('/admin/approve/:driverId', async (req, res) => {
+// Approve Driver (UPDATED: RESTRICTED TO ADMIN)
+app.patch('/admin/approve/:driverId', authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
         const result = await db.collection('drivers').updateOne(
             { _id: new ObjectId(req.params.driverId) },
@@ -210,8 +252,8 @@ app.patch('/admin/approve/:driverId', async (req, res) => {
     }
 });
 
-// View System Analytics
-app.get('/admin/analytics', async (req, res) => {
+// Analytics (UPDATED: RESTRICTED TO ADMIN)
+app.get('/admin/analytics', authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
         const usersCount = await db.collection('users').countDocuments();
         const driversCount = await db.collection('drivers').countDocuments();
@@ -220,4 +262,8 @@ app.get('/admin/analytics', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch analytics" });
     }
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
